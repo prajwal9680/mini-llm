@@ -85,24 +85,6 @@ def estimate_loss():
     model.train()
     return losses
 
-#----------------------------------------------------------------------------
-#TRAINING_LOOP
-#----------------------------------------------------------------------------
-for step in range(max_iters):
-    if step % eval_interval == 0:
-        losses = estimate_loss()
-        print(f"step : {step} | train_loss : {losses['train']:.4f} | val_loss : {losses['val']:.4f}")
-        sample = generate(model, start_token='\n', max_new_tokens=200, temperature=0.8, top_k=40)
-        print(sample)
-    xb, yb = get_batch("train")
-
-    logits = model(xb)
-    loss = F.cross_entropy(logits.view(-1, vocab_size), yb.view(-1))
-
-    optimizer.zero_grad()
-    loss.backward()
-    optimizer.step()
-            
 #---------------------------------------------------------------------------------
 #GENERATE
 #----------------------------------------------------------------------------------
@@ -132,3 +114,22 @@ def generate(model, start_token, max_new_tokens=300, temperature=1.0, top_k=None
     return decode(idx[0].tolist())
 
 
+
+#----------------------------------------------------------------------------
+#TRAINING_LOOP
+#----------------------------------------------------------------------------
+for step in range(max_iters):
+    if step % eval_interval == 0:
+        losses = estimate_loss()
+        print(f"step : {step} | train_loss : {losses['train']:.4f} | val_loss : {losses['val']:.4f}")
+        sample = generate(model, start_token='\n', max_new_tokens=200, temperature=0.8, top_k=40)
+        print(sample)
+    xb, yb = get_batch("train")
+
+    logits = model(xb)
+    loss = F.cross_entropy(logits.view(-1, vocab_size), yb.view(-1))
+
+    optimizer.zero_grad()
+    loss.backward()
+    optimizer.step()
+            
