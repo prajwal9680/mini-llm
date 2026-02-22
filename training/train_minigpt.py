@@ -89,6 +89,21 @@ model = MiniGPT(
     max_seq_len=block_size
 ).to(device)
 
+checkpoint_path = '/kaggle/working/minigpt_checkpoint.pt'
+start_step = 0
+
+# Auto-resume if checkpoint exists
+if os.path.exists(checkpoint_path):
+    print(f"Found checkpoint at {checkpoint_path}. Resuming...")
+    checkpoint = torch.load(checkpoint_path, map_location=device)
+    model.load_state_dict(checkpoint['model_state_dict'])
+    # Optional: load optimizer state if you want to be 100% precise
+    # optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+    start_step = checkpoint['step']
+    print(f"Resuming from step {start_step}")
+else:
+    print("No checkpoint found. Starting from scratch.")
+
 print(f"Model parameters: {sum(p.numel() for p in model.parameters()):,}")
 
 optimizer = optim.AdamW(model.parameters(), lr=learning_rate, fused=True if device == 'cuda' else False)
@@ -141,11 +156,20 @@ def generate(model, start_text, max_new_tokens=100, temperature=0.8, top_k=40):
 print("Starting training...")
 scaler = torch.amp.GradScaler('cuda') if device == 'cuda' else None
 
-for step in range(max_iters):
+for step in range(start_step, max_iters):
     if step % eval_interval == 0:
         losses = estimate_loss()
         print(f"Step {step}: train_loss={losses['train']:.4f}, val_loss={losses['val']:.4f}")
         
+        # Periodic Save (Every eval_interval)
+        print(f"Saving checkpoint at step {step}...")
+        torch.save({
+            'step': step,
+            'model_state_dict': model.state_dict(),
+            'optimizer_state_dict': optimizer.state_dict(),
+            'loss': losses['val'],
+        }, checkpoint_path)
+
         if step > 0:
             sample = generate(model, start_text='The', max_new_tokens=50)
             print(f"Sample: {sample}\n")

@@ -15,7 +15,8 @@ def build_dataset(output_path, max_examples=30000):
     )
 
     enc = tiktoken.get_encoding("gpt2")
-    token_chunks = []
+    import array
+    tokens_acc = array.array('I')
     total_tokens = 0
 
     for i, example in enumerate(dataset):
@@ -30,11 +31,12 @@ def build_dataset(output_path, max_examples=30000):
             encoded = enc.encode(text)
             if len(encoded) > 0:
                 # Add <|endoftext|> token (50256) between documents
-                token_chunks.append(torch.tensor(encoded + [50256], dtype=torch.long))
+                tokens_acc.extend(encoded)
+                tokens_acc.append(50256)
                 total_tokens += len(encoded) + 1
 
-    print(f"Concatenating {len(token_chunks)} chunks...")
-    tokens = torch.cat(token_chunks)
+    print(f"Converting {total_tokens} tokens to tensor...")
+    tokens = torch.tensor(tokens_acc, dtype=torch.long)
     
     print(f"Saving {len(tokens)} tokens to {output_path}")
     torch.save(tokens, output_path)
