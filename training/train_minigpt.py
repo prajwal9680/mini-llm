@@ -23,7 +23,7 @@ block_size = 384
 batch_size = 24
 max_iters = 15000
 eval_interval = 1000
-learning_rate = 4e-3
+learning_rate = 6e-4
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 print(f"Using device: {device}")
@@ -88,7 +88,8 @@ model = MiniGPT(
 
 print(f"Model parameters: {sum(p.numel() for p in model.parameters()):,}")
 
-optimizer = optim.AdamW(model.parameters(), lr=learning_rate)
+optimizer = optim.AdamW(model.parameters(), lr=learning_rate, fused=True if device == 'cuda' else False)
+scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=max_iters, eta_min=learning_rate/10)
 
 # Evaluation
 @torch.no_grad()
@@ -135,7 +136,7 @@ def generate(model, start_text, max_new_tokens=100, temperature=0.8, top_k=40):
 
 # Training loop
 print("Starting training...")
-scaler = torch.cuda.amp.GradScaler()
+scaler = torch.amp.GradScaler('cuda') if device == 'cuda' else None
 
 for step in range(max_iters):
     if step % eval_interval == 0:
@@ -148,17 +149,27 @@ for step in range(max_iters):
     
     xb, yb = get_batch("train")
     
-    with torch.cuda.amp.autocast():
+    # Use modern AMP syntax
+    autocast_context = torch.amp.autocast('cuda') if device == 'cuda' else torch.cuda.amp.autocast(enabled=False)
+    
+    with autocast_context:
         logits = model(xb)
         B, T, C = logits.shape
         loss = F.cross_entropy(logits.reshape(B*T, C), yb.reshape(B*T))
 
     optimizer.zero_grad()
-    scaler.scale(loss).backward()
-    scaler.unscale_(optimizer)
-    torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
-    scaler.step(optimizer)
-    scaler.update()
+    if scaler:
+        scaler.scale(loss).backward()
+        scaler.unscale_(optimizer)
+        torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+        scaler.step(optimizer)
+        scaler.update()
+    else:
+        loss.backward()
+        torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+        optimizer.step()
+
+    scheduler.step()
 
 print("Training complete!")
 

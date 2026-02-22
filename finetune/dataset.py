@@ -10,8 +10,7 @@ def build_dataset(output_path, max_examples=30000):
     dataset = load_dataset(
         "openwebtext",
         split="train",
-        streaming=True,
-        trust_remote_code=True
+        streaming=True
     )
 
     enc = tiktoken.get_encoding("gpt2")
@@ -29,8 +28,9 @@ def build_dataset(output_path, max_examples=30000):
         if len(text) > 0:
             encoded = enc.encode(text)
             if len(encoded) > 0:
-                token_chunks.append(torch.tensor(encoded, dtype=torch.long))
-                total_tokens += len(encoded)
+                # Add <|endoftext|> token (50256) between documents
+                token_chunks.append(torch.tensor(encoded + [50256], dtype=torch.long))
+                total_tokens += len(encoded) + 1
 
     print(f"Concatenating {len(token_chunks)} chunks...")
     tokens = torch.cat(token_chunks)
