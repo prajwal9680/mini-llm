@@ -12,6 +12,9 @@ class MultiHeadSelfAttention(nn.Module):
         self.embed_dim = embed_dim
         self.num_heads = num_heads
         self.head_dim = self.embed_dim // self.num_heads
+        
+        self.attn_dropout = nn.Dropout(0.1)
+        self.resid_dropout = (nn.Dropout(0.1))
 
         self.q_proj = nn.Linear(embed_dim, embed_dim)
         self.k_proj = nn.Linear(embed_dim, embed_dim)
@@ -40,12 +43,15 @@ class MultiHeadSelfAttention(nn.Module):
         scores = scores.masked_fill(mask == 0, float("-inf"))
 
         weights = F.softmax(scores, dim = -1)
+        weights = self.attn_dropout(weights)
 
         out = weights @ V
 
         out = out.transpose(1,2).contiguous().view(B, T, C)
+        out = self.out_proj(out)
+        out = self.resid_dropout(out)
 
-        return self.out_proj(out)
+        return out
 
 if __name__ == "__main__":
     x = torch.randn(2, 8, 64)
@@ -54,6 +60,9 @@ if __name__ == "__main__":
 
     out = attn(x)
     print("attn output shape", out.shape)
+
+
+
 
 
 

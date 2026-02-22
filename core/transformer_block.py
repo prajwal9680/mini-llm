@@ -5,6 +5,7 @@ from core.attention import MultiHeadSelfAttention
 class TransformerBlock(nn.Module):
     def __init__(self, embed_dim, num_heads):
         super().__init__()
+        self.dropout = nn.Dropout(0.1)
 
         self.ln1 = nn.LayerNorm(embed_dim)
         self.attn = MultiHeadSelfAttention(embed_dim, num_heads)
@@ -12,7 +13,8 @@ class TransformerBlock(nn.Module):
         self.mlp = nn.Sequential(
                                   nn.Linear(embed_dim, 4 * embed_dim),
                                   nn.GELU(),
-                                  nn.Linear(4 * embed_dim, embed_dim)
+                                  nn.Linear(4 * embed_dim, embed_dim),
+                                  nn.Dropout(0.1)
                                 )
 
     def forward(self, x):

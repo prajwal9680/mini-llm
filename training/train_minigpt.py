@@ -7,13 +7,13 @@ import requests
 from core.model import MiniGPT
 
 batch_size = 64
-block_size = 128
+block_size = 256
 max_iters = 5000
 eval_interval = 500
 learning_rate = 3e-4
-embed_dim = 128
-num_heads = 4
-num_layers = 4
+embed_dim = 256
+num_heads = 8
+num_layers = 8
  
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
@@ -54,6 +54,9 @@ def get_batch(split):
     y = torch.stack([dataset[i+1 : i+block_size+1] for i in ix])
 
     return x.to(device), y.to(device)
+
+
+
 
 
 #----------------------------------------------------------------
@@ -131,5 +134,6 @@ for step in range(max_iters):
 
     optimizer.zero_grad()
     loss.backward()
+    torch.nn.utils.clip_grad_norm(model.parameters(), 1.0)
     optimizer.step()
             
