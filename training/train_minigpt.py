@@ -57,7 +57,7 @@ if not os.path.exists(data_path):
 if not os.path.exists(data_path):
     print("Building dataset...")
     from finetune.dataset import build_dataset
-    build_dataset(data_path, max_examples=30000)
+    build_dataset(data_path, max_examples=1000000)
 
 # Load data
 print("Loading dataset...")
