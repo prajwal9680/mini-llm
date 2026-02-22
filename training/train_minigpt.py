@@ -16,14 +16,14 @@ from core.model import MiniGPT
 import os
 
 # Configuration
-batch_size = 8
-block_size = 256
-max_iters = 2000
-eval_interval = 200
-learning_rate = 3e-4
-embed_dim = 128
-num_heads = 4
-num_layers = 4
+embed_dim = 320
+num_heads = 8
+num_layers = 8
+block_size = 384
+batch_size = 24
+max_iters = 15000
+eval_interval = 1000
+learning_rate = 4e-3
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 print(f"Using device: {device}")
