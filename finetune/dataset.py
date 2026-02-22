@@ -49,4 +49,4 @@ def build_dataset(output_path, max_examples=30000):
     return tokens
 
 if __name__ == "__main__":
-    build_dataset("openweb_tokens.pt", max_examples=100000)
+    build_dataset("openweb_tokens.pt", max_examples=1000000)
