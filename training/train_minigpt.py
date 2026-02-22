@@ -22,6 +22,7 @@ device = "cuda" if torch.cuda.is_available() else "cpu"
 
 
 import tiktoken
+
 enc = tiktoken.get_encoding("gpt2")
 def encode( text):
     return enc.encode(text)
@@ -32,11 +33,11 @@ def decode(tokens):
 vocab_size = enc.n_vocab
 
 #----------------------------------------------------------
-#LOAD_DATA(TINY SHAKESPEAR)
+#LOAD_DATA
 #----------------------------------------------------------
 
 
-data = torch.load("openweb_tokens.pt")
+data = torch.load("/kaggle/working/openweb_tokens.pt")
 
 n = int(0.95 * len(data))
 
