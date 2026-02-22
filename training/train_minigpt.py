@@ -16,13 +16,16 @@ from core.model import MiniGPT
 import os
 
 # Configuration
-embed_dim = 320
-num_heads = 8
-num_layers = 8
-block_size = 384
-batch_size = 24
-max_iters = 15000
-eval_interval = 1000
+# Maximum Safe Scaling for Kaggle T4 (15GB VRAM)
+# This is equivalent to "GPT-3 Small" (approx 125M parameters)
+embed_dim = 768
+num_heads = 12
+num_layers = 12
+block_size = 512
+batch_size = 8  # Small physical batch to save VRAM
+grad_accumulation_steps = 16 # Effective batch size = 8 * 16 = 128
+max_iters = 100000  # More iterations for a larger model
+eval_interval = 500
 learning_rate = 6e-4
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -147,25 +150,33 @@ for step in range(max_iters):
             sample = generate(model, start_text='The', max_new_tokens=50)
             print(f"Sample: {sample}\n")
     
-    xb, yb = get_batch("train")
-    
-    # Use modern AMP syntax
-    autocast_context = torch.amp.autocast('cuda') if device == 'cuda' else torch.cuda.amp.autocast(enabled=False)
-    
-    with autocast_context:
-        logits = model(xb)
-        B, T, C = logits.shape
-        loss = F.cross_entropy(logits.reshape(B*T, C), yb.reshape(B*T))
-
+    # Gradient Accumulation Loop
     optimizer.zero_grad()
+    accum_loss = 0
+    for _ in range(grad_accumulation_steps):
+        xb, yb = get_batch("train")
+        
+        autocast_context = torch.amp.autocast('cuda') if device == 'cuda' else torch.cuda.amp.autocast(enabled=False)
+        
+        with autocast_context:
+            logits = model(xb)
+            B, T, C = logits.shape
+            loss = F.cross_entropy(logits.reshape(B*T, C), yb.reshape(B*T))
+            loss = loss / grad_accumulation_steps # Scale loss
+        
+        if scaler:
+            scaler.scale(loss).backward()
+        else:
+            loss.backward()
+        accum_loss += loss.item()
+
+    # Step Optimizer
     if scaler:
-        scaler.scale(loss).backward()
         scaler.unscale_(optimizer)
         torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
         scaler.step(optimizer)
         scaler.update()
     else:
-        loss.backward()
         torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
         optimizer.step()
 

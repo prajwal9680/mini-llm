@@ -3,6 +3,7 @@ from datasets import load_dataset
 import tiktoken
 import torch
 import os
+import shutil
 
 def build_dataset(output_path, max_examples=30000):
     print(f"Building dataset with {max_examples} examples...")
@@ -37,7 +38,15 @@ def build_dataset(output_path, max_examples=30000):
     
     print(f"Saving {len(tokens)} tokens to {output_path}")
     torch.save(tokens, output_path)
+
+    # Clean up Hugging Face cache to save disk space on Kaggle
+    cache_dir = os.path.expanduser('~/.cache/huggingface')
+    if os.path.exists(cache_dir):
+        print(f"Cleaning up cache at {cache_dir}...")
+        shutil.rmtree(cache_dir, ignore_errors=True)
+        print("✅ Cache cleared!")
+
     return tokens
 
 if __name__ == "__main__":
-    build_dataset("openweb_tokens.pt")
+    build_dataset("openweb_tokens.pt", max_examples=100000)
