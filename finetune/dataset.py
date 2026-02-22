@@ -35,8 +35,11 @@ def build_dataset(output_path, max_examples=30000):
                 tokens_acc.append(50256)
                 total_tokens += len(encoded) + 1
 
-    print(f"Converting {total_tokens} tokens to tensor...")
-    tokens = torch.tensor(tokens_acc, dtype=torch.long)
+    import numpy as np
+    print(f"Converting {total_tokens} tokens to numpy array (int32)...")
+    # Using np.frombuffer is O(1) memory - it doesn't copy the data!
+    tokens_np = np.frombuffer(tokens_acc, dtype=np.uint32).astype(np.int32)
+    tokens = torch.from_numpy(tokens_np)
     
     print(f"Saving {len(tokens)} tokens to {output_path}")
     torch.save(tokens, output_path)
