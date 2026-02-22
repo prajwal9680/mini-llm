@@ -14,7 +14,7 @@ class MultiHeadSelfAttention(nn.Module):
         self.head_dim = self.embed_dim // self.num_heads
         
         self.attn_dropout = nn.Dropout(0.1)
-        self.resid_dropout = (nn.Dropout(0.1))
+        self.resid_dropout = nn.Dropout(0.1)
 
         self.q_proj = nn.Linear(embed_dim, embed_dim)
         self.k_proj = nn.Linear(embed_dim, embed_dim)
@@ -23,7 +23,6 @@ class MultiHeadSelfAttention(nn.Module):
         self.out_proj = nn.Linear(embed_dim, embed_dim)
 
     def forward(self, x):
-
         B, T, C = x.shape
 
         Q = self.q_proj(x)
@@ -31,23 +30,20 @@ class MultiHeadSelfAttention(nn.Module):
         V = self.v_proj(x)
 
         Q = Q.view(B, T, self.num_heads, self.head_dim).transpose(1, 2)
-
-        K = K.view(B, T, self.num_heads, self.head_dim).transpose(1,2)
-        V = V.view(B, T, self.num_heads, self.head_dim).transpose(1,2)
+        K = K.view(B, T, self.num_heads, self.head_dim).transpose(1, 2)
+        V = V.view(B, T, self.num_heads, self.head_dim).transpose(1, 2)
 
         scores = Q @ K.transpose(-2, -1)
-
         scores = scores / math.sqrt(self.head_dim)
 
-        mask = torch.tril(torch.ones(T, T, device = x.device))
+        mask = torch.tril(torch.ones(T, T, device=x.device)).view(1, 1, T, T)
         scores = scores.masked_fill(mask == 0, float("-inf"))
 
-        weights = F.softmax(scores, dim = -1)
+        weights = F.softmax(scores, dim=-1)
         weights = self.attn_dropout(weights)
 
         out = weights @ V
-
-        out = out.transpose(1,2).contiguous().view(B, T, C)
+        out = out.transpose(1, 2).contiguous().view(B, T, C)
         out = self.out_proj(out)
         out = self.resid_dropout(out)
 
@@ -55,16 +51,6 @@ class MultiHeadSelfAttention(nn.Module):
 
 if __name__ == "__main__":
     x = torch.randn(2, 8, 64)
-    attn = MultiHeadSelfAttention(embed_dim = 64, num_heads = 4)
-
-
+    attn = MultiHeadSelfAttention(embed_dim=64, num_heads=4)
     out = attn(x)
     print("attn output shape", out.shape)
-
-
-
-
-
-
-
-
