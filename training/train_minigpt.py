@@ -6,7 +6,7 @@ import requests
 
 from core.model import MiniGPT
 
-batch_size = 64
+batch_size = 16
 block_size = 512
 max_iters = 5000
 eval_interval = 500
