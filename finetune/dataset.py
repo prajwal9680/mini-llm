@@ -7,15 +7,18 @@ def build_dataset(output_path):
 
     dataset = load_dataset(
         "openwebtext",
-        split="train[:2%]",
+        split="train",
         streaming=True
     )
 
     enc = tiktoken.get_encoding("gpt2")
 
     token_chunks = []
+    max_examples = 200_000   # ~2% approx (adjust if needed)
 
-    for example in dataset:
+    for i, example in enumerate(dataset):
+        if i >= max_examples:
+            break
         encoded = enc.encode(example["text"])
         token_chunks.append(torch.tensor(encoded, dtype=torch.long))
 
