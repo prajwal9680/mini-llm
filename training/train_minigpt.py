@@ -42,7 +42,7 @@ import os
 data_path = "/kaggle/working/openweb_tokens.pt"
 
 if not os.path.exists(data_path):
-    from finetune.dataset import build_dataset
+    from dataset import build_dataset
     build_dataset(data_path)
 
 data = torch.load(data_path)
