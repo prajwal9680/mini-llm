@@ -7,7 +7,7 @@ import requests
 from core.model import MiniGPT
 
 batch_size = 64
-block_size = 256
+block_size = 512
 max_iters = 5000
 eval_interval = 500
 learning_rate = 3e-4
@@ -17,28 +17,28 @@ num_layers = 8
  
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
+
+
+
+
+import tiktoken
+enc = tiktoken.get_encoding("gpt2")
+def encode( text):
+    return enc.encode(text)
+
+def decode(tokens):
+    return enc.decode(tokens)
+
+vocab_size = enc.n_vocab
+
 #----------------------------------------------------------
 #LOAD_DATA(TINY SHAKESPEAR)
 #----------------------------------------------------------
 
-url = "https://raw.githubusercontent.com/karpathy/char-rnn/master/data/tinyshakespeare/input.txt"
-text = requests.get(url).text
 
-chars = sorted(list(set(text)))
-vocab_size = len(chars)
+data = torch.load("openweb_tokens.pt")
 
-stoi = {ch:i for i, ch in enumerate(chars) }
-itos = {i:ch for ch, i in stoi.items()}
-
-def encode (s):
-    return [stoi[ch] for ch in s]
-
-def decode(indices):
-    return "".join([itos[i] for i in indices])
-
-data = torch.tensor(encode(text), dtype = torch.long)
-
-n = int(0.9 * len(data))
+n = int(0.95 * len(data))
 
 train_data = data[:n]
 val_data = data[n:]
@@ -79,10 +79,13 @@ def estimate_loss():
         total_loss = 0
         for _ in range(20):
             xb, yb = get_batch(split)
-            logits = model(xb)
-            loss = F.cross_entropy(logits.view(-1, vocab_size), yb.view(-1))
+            with torch.cuda.amp.autocast():
+                logits = model(xb)
+            
+                B, T, C = logits.shape
+                loss = F.cross_entropy(logits.reshape(B*T, C), yb.reshape(B*T))
 
-            total_loss += loss.item()
+                total_loss += loss.item()
         losses[split] = total_loss / 20
 
     model.train()
@@ -92,11 +95,13 @@ def estimate_loss():
 #GENERATE
 #----------------------------------------------------------------------------------
 @torch.no_grad()
-def generate(model, start_token, max_new_tokens=300, temperature=1.0, top_k=None):
+def generate(model, start_text, max_new_tokens=300, temperature=1.0, top_k=None):
     model.eval()
-    idx = torch.tensor([[stoi[start_token]]], device=device)
 
-    vocab_size = len(stoi)
+    start_tokens = encode(start_text)
+    idx = torch.tensor([start_tokens],dtype=torch.long, device=device)
+
+    
 
     for _ in range(max_new_tokens):
         idx_cond = idx[:, -block_size:]
@@ -121,19 +126,30 @@ def generate(model, start_token, max_new_tokens=300, temperature=1.0, top_k=None
 #----------------------------------------------------------------------------
 #TRAINING_LOOP
 #----------------------------------------------------------------------------
+
+scaler = torch.cuda.amp.GradScaler()
+
 for step in range(max_iters):
     if step % eval_interval == 0:
         losses = estimate_loss()
         print(f"step : {step} | train_loss : {losses['train']:.4f} | val_loss : {losses['val']:.4f}")
-        sample = generate(model, start_token='\n', max_new_tokens=200, temperature=0.8, top_k=40)
+        sample = generate(model, start_text='\n', max_new_tokens=200, temperature=0.8, top_k=40)
         print(sample)
     xb, yb = get_batch("train")
 
-    logits = model(xb)
-    loss = F.cross_entropy(logits.view(-1, vocab_size), yb.view(-1))
+    with torch.cuda.amp.autocast():
+        logits = model(xb)
+        B, T, C = logits.shape
+        loss = F.cross_entropy(logits.reshape(B*T, C), yb.reshape(B*T))
 
     optimizer.zero_grad()
-    loss.backward()
+    scaler.scale(loss).backward()
+
+    scaler.unscale_(optimizer)
     torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
-    optimizer.step()
+
+    scaler.step(optimizer)
+    scaler.update()
+ 
+
             
