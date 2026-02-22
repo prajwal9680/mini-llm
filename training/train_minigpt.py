@@ -37,8 +37,15 @@ vocab_size = enc.n_vocab
 #----------------------------------------------------------
 
 
-data = torch.load("/kaggle/working/openweb_tokens.pt")
+import os
 
+data_path = "/kaggle/working/openweb_tokens.pt"
+
+if not os.path.exists(data_path):
+    from finetune.dataset import build_dataset
+    build_dataset(data_path)
+
+data = torch.load(data_path)
 n = int(0.95 * len(data))
 
 train_data = data[:n]
