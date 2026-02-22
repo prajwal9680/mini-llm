@@ -5,16 +5,21 @@ import torch
 def build_dataset(output_path):
     print("Building dataset (streaming)...")
 
-    dataset = load_dataset("openwebtext", split="train[:5%]")
+    dataset = load_dataset(
+        "openwebtext",
+        split="train[:2%]",
+        streaming=True
+    )
 
     enc = tiktoken.get_encoding("gpt2")
 
-    tokens = []
+    token_chunks = []
 
     for example in dataset:
-        tokens.extend(enc.encode(example["text"]))
+        encoded = enc.encode(example["text"])
+        token_chunks.append(torch.tensor(encoded, dtype=torch.long))
 
-    tokens = torch.tensor(tokens, dtype=torch.long)
+    tokens = torch.cat(token_chunks)
 
     torch.save(tokens, output_path)
 
