@@ -1,6 +1,11 @@
-
+import os
 import sys
-sys.path.append('/kaggle/working')
+
+# Dynamic path detection
+project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if project_root not in sys.path:
+    sys.path.append(project_root)
+print(f"Project root: {project_root}")
 
 import torch
 import torch.nn as nn
@@ -34,9 +39,9 @@ def decode(tokens):
     return enc.decode(tokens)
 
 # Data path
-data_path = "/kaggle/working/openweb_tokens.pt"
+data_path = os.path.join(project_root, "openweb_tokens.pt")
 
-# Kaggle-specific: check if dataset is in input directory if not in working
+# Kaggle-specific: check if dataset is in input directory if not found
 if not os.path.exists(data_path):
     # Search for openweb_tokens.pt in /kaggle/input
     for root, dirs, files in os.walk('/kaggle/input'):
