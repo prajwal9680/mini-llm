@@ -7,9 +7,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 import tiktoken
-import os
-
 from core.model import MiniGPT
+import os
 
 # Configuration
 batch_size = 8
@@ -37,10 +36,19 @@ def decode(tokens):
 # Data path
 data_path = "/kaggle/working/openweb_tokens.pt"
 
+# Kaggle-specific: check if dataset is in input directory if not in working
+if not os.path.exists(data_path):
+    # Search for openweb_tokens.pt in /kaggle/input
+    for root, dirs, files in os.walk('/kaggle/input'):
+        if 'openweb_tokens.pt' in files:
+            data_path = os.path.join(root, 'openweb_tokens.pt')
+            print(f"Found dataset at: {data_path}")
+            break
+
 # Build dataset if needed
 if not os.path.exists(data_path):
     print("Building dataset...")
-    from data.dataset import build_dataset
+    from finetune.dataset import build_dataset
     build_dataset(data_path, max_examples=30000)
 
 # Load data
