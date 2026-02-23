@@ -21,15 +21,22 @@ import os
 embed_dim = 768
 num_heads = 12
 num_layers = 12
-block_size = 512
-batch_size = 8  # Small physical batch to save VRAM
-grad_accumulation_steps = 16 # Effective batch size = 8 * 16 = 128
-max_iters = 100000  # More iterations for a larger model
+# Pillar 1 & 7: Context expansion and Extended training
+block_size = 1024
+batch_size = 12  # Safer starting point for 24GB VRAM
+grad_accumulation_steps = 10 # Effective batch size = 12 * 10 = 120
+max_iters = 40000 
 eval_interval = 500
 learning_rate = 6e-4
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 print(f"Using device: {device}")
+
+# Pillar 8: Hardware Acceleration (A6000 / Ampere+)
+if device == 'cuda':
+    torch.backends.cuda.matmul.allow_tf32 = True
+    torch.backends.cudnn.allow_tf32 = True
+    print("TF32 Acceleration Enabled")
 
 # Tokenizer
 enc = tiktoken.get_encoding("gpt2")
@@ -57,7 +64,7 @@ if not os.path.exists(data_path):
 if not os.path.exists(data_path):
     print("Building dataset...")
     from finetune.dataset import build_dataset
-    build_dataset(data_path, max_examples=1000000)
+    build_dataset(data_path, max_examples=120000)
 
 # Load data
 print("Loading dataset...")
@@ -76,7 +83,7 @@ def get_batch(split):
     dataset = train_data if split == 'train' else val_data
     ix = torch.randint(len(dataset) - block_size, (batch_size,))
     x = torch.stack([dataset[i:i+block_size] for i in ix]).long()
-    y = torch.stack([dataset[i+1:i+block_size+1] for i in ix]).long()
+    y = x.clone() # Model handles shifting internally
     return x.to(device), y.to(device)
 
 # Model
@@ -89,7 +96,7 @@ model = MiniGPT(
     max_seq_len=block_size
 ).to(device)
 
-checkpoint_path = '/kaggle/working/minigpt_checkpoint.pt'
+checkpoint_path = 'minigpt_checkpoint.pt'
 start_step = 0
 
 # Auto-resume if checkpoint exists
@@ -106,25 +113,38 @@ else:
 
 print(f"Model parameters: {sum(p.numel() for p in model.parameters()):,}")
 
-optimizer = optim.AdamW(model.parameters(), lr=learning_rate, fused=True if device == 'cuda' else False)
-scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=max_iters, eta_min=learning_rate/10)
+optimizer = optim.AdamW(
+    [p for p in model.parameters() if p.requires_grad], 
+    lr=learning_rate, 
+    fused=True if device == 'cuda' else False
+)
 
-# Evaluation
+# Pillar 3: Warmup + Cosine Decay Scheduler
+import math
+warmup_steps = 2000
+
+def get_lr(step):
+    # 1. Linear warmup
+    if step < warmup_steps:
+        return learning_rate * step / warmup_steps
+    # 2. Cosine decay
+    progress = (step - warmup_steps) / (max_iters - warmup_steps)
+    return learning_rate * 0.5 * (1 + math.cos(math.pi * progress))
+
+# Pillar 4: Perplexity & Improved Validation
 @torch.no_grad()
 def estimate_loss():
-    losses = {}
     model.eval()
-    
+    losses = {}
     for split in ["train", "val"]:
-        total_loss = 0
-        for _ in range(10):
+        log_losses = []
+        for _ in range(20): # More samples for stability
             xb, yb = get_batch(split)
-            logits = model(xb)
-            B, T, C = logits.shape
-            loss = F.cross_entropy(logits.reshape(B*T, C), yb.reshape(B*T))
-            total_loss += loss.item()
-        losses[split] = total_loss / 10
-    
+            logits, loss = model(xb, targets=yb)
+            log_losses.append(loss.item())
+        avg_loss = sum(log_losses) / len(log_losses)
+        losses[split] = avg_loss
+        losses[f"{split}_ppl"] = math.exp(avg_loss)
     model.train()
     return losses
 
@@ -137,18 +157,25 @@ def generate(model, start_text, max_new_tokens=100, temperature=0.8, top_k=40):
 
     for _ in range(max_new_tokens):
         idx_cond = idx[:, -block_size:]
-        logits = model(idx_cond)
+        logits, _ = model(idx_cond)
         logits = logits[:, -1, :]
         logits = logits / max(temperature, 1e-8)
 
         if top_k is not None:
             k = min(top_k, vocab_size)
-            v, _ = torch.topk(logits, k)
+            v, _ = torch.topk(logits, k=50)
             logits[logits < v[:, [-1]]] = -float('inf')
 
         probs = F.softmax(logits, dim=-1)
         next_token = torch.multinomial(probs, num_samples=1)
         idx = torch.cat((idx, next_token), dim=1)
+
+        # Stop condition: If model starts hallucinating User prompt
+        decoded_so_far = decode(idx[0].tolist())
+        if "### User:" in decoded_so_far:
+            # Cut off the hallucinated part
+            final_text = decoded_so_far.split("### User:")[0]
+            return final_text
 
     return decode(idx[0].tolist())
 
@@ -174,18 +201,22 @@ for step in range(start_step, max_iters):
             sample = generate(model, start_text='The', max_new_tokens=50)
             print(f"Sample: {sample}\n")
     
+    # Pillar 3: Update Learning Rate
+    lr = get_lr(step)
+    for param_group in optimizer.param_groups:
+        param_group["lr"] = lr
+
     # Gradient Accumulation Loop
     optimizer.zero_grad()
     accum_loss = 0
     for _ in range(grad_accumulation_steps):
         xb, yb = get_batch("train")
         
-        autocast_context = torch.amp.autocast('cuda') if device == 'cuda' else torch.cuda.amp.autocast(enabled=False)
+        # Use BF16 for Ampere GPUs (Faster/Stable)
+        autocast_context = torch.amp.autocast('cuda', dtype=torch.bfloat16) if device == 'cuda' else torch.cuda.amp.autocast(enabled=False)
         
         with autocast_context:
-            logits = model(xb)
-            B, T, C = logits.shape
-            loss = F.cross_entropy(logits.reshape(B*T, C), yb.reshape(B*T))
+            logits, loss = model(xb, targets=yb)
             loss = loss / grad_accumulation_steps # Scale loss
         
         if scaler:
@@ -204,7 +235,7 @@ for step in range(start_step, max_iters):
         torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
         optimizer.step()
 
-    scheduler.step()
+    # scheduler.step() # REMOVED: using manual get_lr logic above
 
 print("Training complete!")
 
