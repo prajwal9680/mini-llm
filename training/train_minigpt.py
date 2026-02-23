@@ -16,15 +16,15 @@ from core.model import MiniGPT
 import os
 
 # Configuration
-# Maximum Safe Scaling for Kaggle T4 (15GB VRAM)
-# This is equivalent to "GPT-3 Small" (approx 125M parameters)
+# Safer scaling for ~16GB GPUs (e.g. RTX A4000)
+# (Attention memory scales with block_size^2, so keep context modest.)
 embed_dim = 768
 num_heads = 12
 num_layers = 12
 # Pillar 1 & 7: Context expansion and Extended training
-block_size = 1024
-batch_size = 12  # Safer starting point for 24GB VRAM
-grad_accumulation_steps = 10 # Effective batch size = 12 * 10 = 120
+block_size = 512
+batch_size = 2
+grad_accumulation_steps = 60 # Effective batch size = 2 * 60 = 120
 max_iters = 40000 
 eval_interval = 500
 learning_rate = 6e-4
@@ -48,26 +48,10 @@ def encode(text):
 def decode(tokens):
     return enc.decode(tokens)
 
-# Data path
+# Data path (expects prebuilt tensor dataset)
 data_path = os.path.join(project_root, "openweb_tokens.pt")
 
-# Kaggle-specific: check if dataset is in input directory if not found
-if not os.path.exists(data_path):
-    # Search for openweb_tokens.pt in /kaggle/input
-    for root, dirs, files in os.walk('/kaggle/input'):
-        if 'openweb_tokens.pt' in files:
-            data_path = os.path.join(root, 'openweb_tokens.pt')
-            print(f"Found dataset at: {data_path}")
-            break
-
-# Build dataset if needed
-if not os.path.exists(data_path):
-    print("Building dataset...")
-    from finetune.dataset import build_dataset
-    build_dataset(data_path, max_examples=120000)
-
-# Load data
-print("Loading dataset...")
+print("Loading prebuilt dataset...")
 data = torch.load(data_path)
 print(f"Total tokens: {len(data):,}")
 n = int(0.9 * len(data))
@@ -247,5 +231,5 @@ final_text = generate(model, start_text='Once upon a time', max_new_tokens=200)
 print(final_text)
 
 # Save model
-torch.save(model.state_dict(), '/kaggle/working/minigpt_final.pt')
-print("\nModel saved to /kaggle/working/minigpt_final.pt")
+torch.save(model.state_dict(), 'minigpt_final.pt')
+print("\nModel saved to minigpt_final.pt")
