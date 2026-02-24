@@ -26,9 +26,9 @@ class InstructionDataset(Dataset):
         item = self.data[idx]
         messages = item.get("messages", [])
 
-        # Fallback for Dolly-style single turn data
+        # Fallback for Dolly / Alpaca formats
         if not messages and "instruction" in item:
-            user_text = item["instruction"]
+            user_text = item.get("instruction", "")
 
             if item.get("input"):
                 user_text += "\n" + item["input"]
@@ -36,6 +36,9 @@ class InstructionDataset(Dataset):
                 user_text += "\n" + item["context"]
 
             assistant_text = item.get("output") or item.get("response") or ""
+
+            if assistant_text.strip() == "":
+                assistant_text = "I don't know."
 
             messages = [
                 {"role": "user", "content": user_text},

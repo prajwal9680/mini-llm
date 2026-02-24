@@ -87,7 +87,7 @@ def load_chat_model():
     if os.path.exists(lora_path):
         print(f"Loading Chat Adapters: {lora_path}")
         model.load_state_dict(torch.load(
-            lora_path, map_location=device), strict=False)
+            lora_path='lora_sft_dolly_alpaca.pt', map_location=device), strict=False)
 
     model.eval()
     return model

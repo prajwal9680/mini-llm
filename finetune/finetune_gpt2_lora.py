@@ -104,7 +104,18 @@ print(f"Total parameters: {sum(p.numel() for p in model.parameters()):,}")
 
 # Dataset
 print("Loading dataset...")
-raw_data = load_dataset("databricks/databricks-dolly-15k", split="train")
+
+print("Loading Dolly dataset...")
+dolly = load_dataset("databricks/databricks-dolly-15k", split="train")
+
+print("Loading Alpaca dataset...")
+alpaca = load_dataset("tatsu-lab/alpaca", split="train")
+
+print("Merging datasets...")
+raw_data = dolly.concatenate(alpaca)
+
+print("Total examples:", len(raw_data))
+
 dataset = InstructionDataset(raw_data, tokenizer, block_size=block_size)
 dataloader = DataLoader(
     dataset,
@@ -130,7 +141,7 @@ print(y[:40])
 # Optimizer: Filter only trainable parameters
 optimizer = torch.optim.AdamW(
     [p for p in model.parameters() if p.requires_grad],
-    lr=2e-5,
+    lr=learning_rate,
     weight_decay=0.1,
     fused=True if device == 'cuda' else False
 )
@@ -227,7 +238,7 @@ def save_lora_only(model, path):
     print("Adapters saved successfully!")
 
 
-lora_output_path = 'lora_sft_epoch_2.pt'
+lora_output_path = 'lora_sft_dolly_alpaca.pt'
 save_lora_only(model, lora_output_path)
 
 print("Model output test run and saving completed.")
