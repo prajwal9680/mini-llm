@@ -51,12 +51,13 @@ def apply_lora(model, rank=8):
         block.attn.v_proj = LoRALinear(block.attn.v_proj, rank=rank)
     return model
 
-# ✅ Step 4 — LR / Epoch Settings
+# ✅ Step 4 — LR / Epoch Settings (tuned for RTX A4000)
+# Slightly more capacity and training time, still affordable.
 learning_rate = 2e-5
-num_epochs = 2
-batch_size = 16 # Optimized for A6000
+num_epochs = 3          # was 2
+batch_size = 4          # keep micro-batch safe for 16GB
 block_size = 1024
-lora_rank = 8
+lora_rank = 16          # was 8, richer adapters
 device = "cuda" if torch.cuda.is_available() else "cpu"
 print(f"Using device: {device}")
 
@@ -105,7 +106,7 @@ dataloader = DataLoader(
     dataset, 
     batch_size=batch_size, 
     shuffle=True,
-    num_workers=6, # Multiprocessing boot
+    num_workers=2, # Matched to 4-CPU VM
     pin_memory=True, # High speed host-to-device transfer
     persistent_workers=True # Keep workers alive between epochs
 )

@@ -1,4 +1,4 @@
-# Mini-LLM Final Launch-Ready Codebase (GPT-3 Hybrid - Final Calibration)
+# Mini-LLM Final Launch-Ready Codebase (GPT-3 Hybrid - 500 INR Gold Standard)
 
 
 
@@ -905,10 +905,10 @@ num_heads = 12
 num_layers = 12
 # Pillar 1 & 7: Context expansion and Extended training
 block_size = 1024
-batch_size = 12  # Safer starting point for 24GB VRAM
-grad_accumulation_steps = 10 # Effective batch size = 12 * 10 = 120
-max_iters = 40000 
-eval_interval = 500
+batch_size = 4  # User specified
+grad_accumulation_steps = 30 # Effective batch size = 4 * 30 = 120
+max_iters = 60000 # Gold Standard (500 INR target)
+eval_interval = 1000 # More efficient for longer run
 learning_rate = 6e-4
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
