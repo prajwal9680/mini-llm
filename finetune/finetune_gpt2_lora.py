@@ -1,3 +1,6 @@
+import math
+from finetune.dataset import InstructionDataset
+from core.model import MiniGPT
 import os
 import sys
 import torch
@@ -12,13 +15,11 @@ project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if project_root not in sys.path:
     sys.path.append(project_root)
 
-from core.model import MiniGPT
-from finetune.dataset import InstructionDataset
-import math
 
 # ---- LORA INFRASTRUCTURE (Local Wrapper to keep core/ clean) ----
+
 class LoRALinear(nn.Module):
-    def __init__(self, base_layer, rank=8, lora_alpha=16):
+    def __init__(self, base_layer, rank=16, lora_alpha=16):
         super().__init__()
         self.base_layer = base_layer
         self.rank = rank
@@ -28,14 +29,14 @@ class LoRALinear(nn.Module):
         # Freeze base layer
         for p in self.base_layer.parameters():
             p.requires_grad = False
-        
+
         # LoRA matrices
         in_features = base_layer.in_features
         out_features = base_layer.out_features
-        
+
         self.lora_A = nn.Parameter(torch.zeros((in_features, rank)))
         self.lora_B = nn.Parameter(torch.zeros((rank, out_features)))
-        
+
         # Pillar 5: Initialize LoRA B to zeros (Important for stability)
         nn.init.kaiming_uniform_(self.lora_A, a=math.sqrt(5))
         nn.init.zeros_(self.lora_B)
@@ -44,17 +45,19 @@ class LoRALinear(nn.Module):
         # Result = Base(x) + (x @ A @ B) * scaling
         return self.base_layer(x) + (x @ self.lora_A @ self.lora_B) * self.scaling
 
-def apply_lora(model, rank=8):
+
+def apply_lora(model, rank=16):
     """Injects LoRA into Q and V projections of the model blocks."""
     for block in model.blocks:
         block.attn.q_proj = LoRALinear(block.attn.q_proj, rank=rank)
         block.attn.v_proj = LoRALinear(block.attn.v_proj, rank=rank)
     return model
 
+
 # ✅ Step 4 — LR / Epoch Settings (tuned for RTX A4000)
 # Slightly more capacity and training time, still affordable.
-learning_rate = 2e-5
-num_epochs = 3          # was 2
+learning_rate = 4e-5
+num_epochs = 6          # was 2
 batch_size = 4          # keep micro-batch safe for 16GB
 block_size = 1024
 lora_rank = 16          # was 8, richer adapters
@@ -95,7 +98,8 @@ else:
 print(f"Applying LoRA (rank={lora_rank}) to attention layers...")
 model = apply_lora(model, rank=lora_rank).to(device)
 
-print(f"Trainable parameters: {sum(p.numel() for p in model.parameters() if p.requires_grad):,}")
+print(
+    f"Trainable parameters: {sum(p.numel() for p in model.parameters() if p.requires_grad):,}")
 print(f"Total parameters: {sum(p.numel() for p in model.parameters()):,}")
 
 # Dataset
@@ -103,12 +107,12 @@ print("Loading dataset...")
 raw_data = load_dataset("databricks/databricks-dolly-15k", split="train")
 dataset = InstructionDataset(raw_data, tokenizer, block_size=block_size)
 dataloader = DataLoader(
-    dataset, 
-    batch_size=batch_size, 
+    dataset,
+    batch_size=batch_size,
     shuffle=True,
-    num_workers=2, # Matched to 4-CPU VM
-    pin_memory=True, # High speed host-to-device transfer
-    persistent_workers=True # Keep workers alive between epochs
+    num_workers=2,  # Matched to 4-CPU VM
+    pin_memory=True,  # High speed host-to-device transfer
+    persistent_workers=True  # Keep workers alive between epochs
 )
 
 # ✅ Step 1 — Check Masking Live
@@ -132,6 +136,8 @@ optimizer = torch.optim.AdamW(
 )
 
 # ---- VISUALIZATION & OVERFIT TEST ----
+
+
 def visualize_masking(dataset, tokenizer, num_samples=1):
     print("\n--- Label Masking Visualization (First 50 tokens) ---")
     x, y = dataset[0]
@@ -139,10 +145,12 @@ def visualize_masking(dataset, tokenizer, num_samples=1):
     labels = y.tolist()
     for i in range(min(50, len(tokens))):
         t, l = tokens[i], labels[i]
-        if t == 50256 and i > 0: break # Stop at first pad if possible
+        if t == 50256 and i > 0:
+            break  # Stop at first pad if possible
         token_str = tokenizer.decode([t]).replace("\n", "\\n")
         label_str = "KEEP" if l != -100 else "MASK"
         print(f"Token: {token_str:15} | Label: {label_str}")
+
 
 def overfit_test(model, dataset, optimizer, device, num_iters=30):
     print("\n--- Starting Single-Sample Overfit Test ---")
@@ -157,6 +165,7 @@ def overfit_test(model, dataset, optimizer, device, num_iters=30):
         if i % 10 == 0:
             print(f"Overfit Iter {i}, Loss: {loss.item():.4f}")
     print("Overfit test completed. Loss should drop significantly.\n")
+
 
 # Run Verification
 visualize_masking(dataset, tokenizer)
@@ -173,7 +182,7 @@ for epoch in range(num_epochs):
 
         with torch.amp.autocast('cuda', dtype=torch.bfloat16) if device == 'cuda' else torch.cuda.amp.autocast(enabled=False):
             logits, loss = model(input_ids, targets=labels)
-        
+
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
@@ -181,7 +190,7 @@ for epoch in range(num_epochs):
         # ✅ Step 2 — Print First 200 Loss Values
         if step < 200:
             print(f"Step {step}: {loss.item()}")
-        
+
         step += 1
 
 # ✅ Step 3 — Quick Functional Test After Training
@@ -207,12 +216,16 @@ decoded = tokenizer.decode(generated[0].tolist())
 print(f"Generated text:\n{decoded}")
 
 # ✅ Step 4 — Save LoRA Adapters Only
+
+
 def save_lora_only(model, path):
     print(f"Saving LoRA adapters to {path}...")
     # Only save parameters that require grad (the adapters)
-    lora_state_dict = {k: v for k, v in model.state_dict().items() if 'lora_' in k}
+    lora_state_dict = {k: v for k,
+                       v in model.state_dict().items() if 'lora_' in k}
     torch.save(lora_state_dict, path)
     print("Adapters saved successfully!")
+
 
 lora_output_path = 'lora_sft_epoch_2.pt'
 save_lora_only(model, lora_output_path)
