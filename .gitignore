@@ -1,0 +1,25 @@
+# Model weights (too large for GitHub)
+checkpoints/
+*.pt
+*.bin
+*.tar.gz
+*.pth
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+venv/
+.venv/
+env/
+
+# Secrets / keys
+*.pem
+*.env
+.env
+
+# Misc
+full_code.txt
+learning_guide.md
+desktop.ini
+.vscode/
